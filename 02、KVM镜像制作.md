@@ -1,6 +1,6 @@
-#KVM镜像制作
+# KVM镜像制作
 
-##KVM安装centos7.4虚拟机   
+## VM安装centos7.4虚拟机   
 方法1：使用virt-manager来安装一个虚拟机，时区设置为Asia/Shanghai，最小的程序安装，然后自定义分区，根据实际使用情况进行分区，本地的分区选择标准分区，未采用LVM分区，swap 4096M，剩余的全部磁盘空间都是/分区。磁盘是qcow2格式的，大小为100G。如果磁盘不够后续再添加磁盘。  
 
 方法2：使用virt-install来安装虚拟机，命令如下：
@@ -8,6 +8,70 @@
 virt-install --name default --ram 1024 --vcpus=2 --location=/home/CentOS-7-x86_64-DVD-1708.iso --disk path=/var/lib/libvirt/images/default.qcow2,size=100,format=qcow2 --network bridge=br0 --os-type=linux --os-variant=rhel7 --nographics --extra-args='console=ttyS0' --force
 ```
 这种安装为文本方式安装，就算分区选择自定义，实际上centos7的默认分区为/boot swap /分区50G，其他的全部为/home分区，这种分区不太合理，现在很多程序修改默认的数据存储位置都很麻烦。  
-强烈推荐采用第一种安装，自定义分区；
+强烈推荐采用第一种安装，自定义分区；  
+虚拟机安装完成之后，进入虚拟机进行一些常用的配置  
+1、设置虚拟机的ip地址和dns，本地模板的虚拟机地址配置如下：  
+```bash
+ip地址配置如下：   
+TYPE=Ethernet
+PROXY_METHOD=none
+BROWSER_ONLY=no
+BOOTPROTO=static
+DEFROUTE=yes
+IPV4_FAILURE_FATAL=no
+IPV6INIT=yes
+IPV6_AUTOCONF=yes
+IPV6_DEFROUTE=yes
+IPV6_FAILURE_FATAL=no
+IPV6_ADDR_GEN_MODE=stable-privacy
+NAME=eth0
+UUID=7f5d24f9-edb3-45e8-a2e0-b3e8cc331052
+DEVICE=eth0
+ONBOOT=yes
+IPADDR=192.168.2.112
+NETMASK=255.255.255.0
+GATEWAY=192.168.2.1
+dns配置如下：
+nameserver  202.101.172.35
+```
+2、安装epel  
+```bash
+yum -y install epel-release
+```
+3、安装vim和ntp等常用工具  
+```bash
+yum -y install wget curl vim ntp
+systemctl start ntp
+systemctl enable ntp
+```
+4、关闭firewalld和selinux   
+```bash
+systemctl stop firewalld
+systemctl disable firewalld
+sed -i "s/^SELINUX\=enforcing/SELINUX\=disabled/g" /etc/selinux/config
+```
+5、根据实际用途进行其他修改  
+例如关闭swap或者修改文件句柄  
 
+## KVM标准镜像制作  
+1、查看之前安装的虚拟机  
+```bash
+[root@k8s-test-1 ~]# virsh list --all
+ Id    Name                           State
+----------------------------------------------------
+ 2     192-168-2-111                  running
+ 
+ 
+ [root@k8s-test-1 ~]# virsh shutdown 192-168-2-111
+Domain 192-168-2-111 is being shutdown
+
+```
+
+2、基于安装的虚拟机制作xml文件和磁盘文件  
+```bash
+[root@k8s-test-1 ~]#  virsh dumpxml 192-168-2-111 > /var/lib/libvirt/images/template.xml
+[root@k8s-test-1 ~]# cp /var/lib/libvirt/images/192-168-2-111.qcow2 /var/lib/libvirt/images/template.qcow2
+[root@k8s-test-1 ~]# sed -i 's/192-168-2-111.qcow2/template.qcow2/g' /var/lib/libvirt/images/template.xml 
+
+```
 
