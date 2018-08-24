@@ -1,0 +1,43 @@
+#!/bin/bash
+
+rm_kvm() {
+    if [[ -f $XML_DIR/${VMNAME}.xml ]];then
+        virsh destroy $VMNAME >/dev/null
+        sleep 1
+        virsh undefine $VMNAME >/dev/null
+        sleep 1
+        if [ $? -ne 0 ]; then
+            echo -e "virsh undefine $VMNAME error!"
+            exit 1
+        fi
+        test -f $XML_DIR/${VMNAME}.xml && rm -f $XML_DIR/${VMNAME}.xml
+    else
+        echo -e "Can't find $XML_DIR/${VMNAME}.xml"
+    fi
+    if [[ -f $IMAGE_DIR/${VMNAME}.qcow2 ]];then
+        rm -rf $IMAGE_DIR/${VMNAME}.qcow2 && rm -rf $IMAGE_DIR/${VMNAME}-data*.qcow2
+        if [ $? -ne 0 ]; then
+            echo -e "rm $IMAGE_DIR/${VMNAME}.img error!"
+            exit 1
+        fi
+    else
+        echo -e "Can't find $IMAGE_DIR/${VMNAME}.img"
+    fi
+}
+
+main(){
+    dateTime=$(date +%Y%m%d%H%M%S)
+    IMAGE_DIR="/var/lib/libvirt/images"
+    XML_DIR="/etc/libvirt/qemu"
+    rm_kvm
+    echo -e "rm KVM virtual machine: \"$VMNAME\" finish!"
+}
+
+VMNAME=$1
+if [[ -z $1 || ! -z $2 ]];then 
+    echo "Usage: $(basename $0) vmname"
+    echo "eg: $(basename $0) 192-168-2-112-k8s-1"
+    exit 1
+fi
+
+main
