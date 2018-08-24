@@ -1,0 +1,144 @@
+#!/bin/bash 
+
+help() {
+    echo "Usage: $(basename $0) vmname= vcpus= memory= ip= mask= gateway="
+    echo "eg: $(basename $0) vmname=192-168-2-112-k8s-1 vcpus=4 memory=8G ip=192.168.2.112 mask=255.255.255.0 gateway=192.168.2.1
+"
+}
+
+error() {
+	echo -e "input parameter error: $1 \n please try again!"
+}
+
+modify_kvm(){
+   vname_xml=$XML_DIR/${VMNAME}.xml
+   sed -i "/vcpu/s/4/${VCPUS}/g" $vname_xml
+   sed -i "/unit/s/KiB/${MEM_UNIT}iB/g" $vname_xml
+   sed -i "/memory/s/4194304/${MEM_NUM}/g" $vname_xml
+   sed -i "/currentMemory/s/4194304/${MEM_NUM}/g" $vname_xml
+}
+
+define_kvm() {
+    virsh define $XML_DIR/$VMNAME.xml >/dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "virsh define $VMNAME.xml error!"
+        exit 1
+    fi
+}
+
+
+start_kvm(){
+    virsh autostart $VMNAME >/dev/null
+    virsh start $VMNAME >/dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "virsh start $VMNAME error!"
+        exit 1
+    fi
+}
+
+modify_network() {
+    virt-copy-out -d $VMNAME /etc/sysconfig/network-scripts/ifcfg-eth0 /tmp/     
+    sed -i "s/IPADDR=.*/IPADDR=$IPADDR/g" /tmp/ifcfg-eth0
+    sed -i "s/NETMASK=.*/NETMASK=$NETMASK/g" /tmp/ifcfg-eth0
+    sed -i "s/GATEWAY=.*/GATEWAY=$GATEWAY/g" /tmp/ifcfg-eth0
+    virt-copy-in -d $VMNAME /tmp/ifcfg-eth0 /etc/sysconfig/network-scripts/
+}
+
+
+main(){
+    dateTime=$(date +%Y%m%d%H%M%S)
+    IMAGE_DIR="/var/lib/libvirt/images"
+    XML_DIR="/etc/libvirt/qemu"
+    TEMPLATE_XML="/var/lib/libvirt/images/template.xml"
+
+    if [ -f "$XML_DIR/${VMNAME}.xml" ]; then
+        echo -e "$XML_DIR/${VMNAME}.xml exist."
+        exit 1
+    fi
+    if [ -f "$IMAGE_DIR/${VMNAME}.qcow2" ]; then
+        echo -e "$IMAGE_DIR/${VMNAME}.qcow2 exist."
+        exit
+    fi
+    
+    virt-clone --connect qemu:///system --original-xml $TEMPLATE_XML --name $VMNAME --file $IMAGE_DIR/${VMNAME}.qcow2
+    modify_kvm
+    modify_network
+    define_kvm
+    start_kvm
+    echo -e "create KVM virtual machine: \"$VMNAME\" finish!"
+}
+
+for line in $@
+    do
+	case $line in
+	vmname*)
+		VMNAME=$(echo $line | awk -F "=" '{print $2}')
+		;;
+	vcpus*)
+		VCPUS=$(echo $line | awk -F "=" '{print $2}')
+		if ! echo $VCPUS | grep '^[0-9]\{1,2\}$' > /dev/null; then
+			error $line
+			help
+			exit 1
+		fi
+		;;
+	memory*)
+		MEM_TEMP=$(echo $line | awk -F "=" '{print $2}')
+		MEM_NUM=$(echo ${MEM_TEMP:0:${#MEM_TEMP}-1})
+		MEM_UNIT=$(echo ${MEM_TEMP:0-1} | tr '[a-z]' '[A-Z]')
+		if ! echo $MEM_NUM | grep '[0-9]' > /dev/null; then
+			error $line
+			help
+			exit 1
+		fi
+		if [[ "$MEM_UNIT" != "G" && "$MEM_UNIT" != "M" && "$MEM_UNIT" != "K" ]]; then
+			error $line
+			help
+			exit 1
+		fi
+		;;
+	ip*)
+		IPADDR=$(echo $line | awk -F "=" '{print $2}')
+		if ! echo $IPADDR | grep '[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}' > /dev/null; then
+			error $line
+			help
+			exit 1
+		fi
+		;;
+	mask*)
+		NETMASK=$(echo $line | awk -F "=" '{print $2}')
+		if ! echo $NETMASK | grep '[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}' > /dev/null; then
+			error $line
+			help
+			exit 1
+		fi
+		;;
+	gateway*)
+		GATEWAY=$(echo $line | awk -F "=" '{print $2}')
+		if ! echo $GATEWAY | grep '[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}' > /dev/null; then
+			error $line
+			help
+			exit 1
+		fi
+		;;
+        disk*)
+                DISK_SIZE=$(echo $line | awk -F "=" '{print $2}')
+                if ! echo $DISK_SIZE | egrep '^[1-9][0-9]*G$' > /dev/null; then
+                    error $line;help;exit 1
+                fi
+                ;;
+	*)
+		error $line
+		help
+		exit 1
+		;;
+	esac
+done	
+
+if [ -z "$VMNAME" ] || [ -z "$VCPUS" ] || [ -z "$MEM_NUM" ] || [ -z "$IPADDR" ] || [ -z "$NETMASK" ] || [ -z "$GATEWAY" ];then
+    echo -e "input parameter incomplete: $@"
+    help
+    exit 1
+fi
+
+main
